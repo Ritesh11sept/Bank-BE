@@ -8,6 +8,8 @@ import morgan from "morgan";
 import kpiRoutes from "./routes/kpi.js";
 import productRoutes from "./routes/product.js";
 import transactionRoutes from "./routes/transaction.js";
+import potsRoutes from "./routes/pots.js";
+import userRoutes from "./routes/user.js"; // Make sure .js extension is included
 import KPI from "./models/KPI.js";
 import Product from "./models/Product.js";
 import Transaction from "./models/Transaction.js";
@@ -33,6 +35,14 @@ app.use(cors({
 app.use("/kpi", kpiRoutes);
 app.use("/product", productRoutes);
 app.use("/transaction", transactionRoutes);
+app.use("/pots", potsRoutes);
+app.use("/user", userRoutes); // Make sure this line comes before error handling
+
+// Add some debugging middleware
+app.use((req, res, next) => {
+  console.log(`${req.method} ${req.url}`);
+  next();
+});
 
 /* ERROR HANDLING MIDDLEWARE */
 app.use((err, req, res, next) => {
