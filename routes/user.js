@@ -73,9 +73,15 @@ router.route('/register')
         linkedAccounts: accounts
       });
 
-      const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET || 'fallbacksecret', {
-        expiresIn: '30d',
-      });
+      if (!process.env.JWT_SECRET) {
+        throw new Error('JWT_SECRET is not configured');
+      }
+
+      const token = jwt.sign(
+        { id: user._id }, 
+        process.env.JWT_SECRET,
+        { expiresIn: '30d' }
+      );
 
       res.status(201).json({
         success: true,
@@ -91,7 +97,10 @@ router.route('/register')
       });
     } catch (error) {
       console.error('Register error:', error);
-      res.status(500).json({ success: false, message: error.message });
+      res.status(500).json({ 
+        success: false, 
+        message: error.message || 'Registration failed' 
+      });
     }
   });
 
@@ -111,9 +120,15 @@ router.route('/login')
         return res.status(401).json({ message: 'Invalid credentials' });
       }
 
-      const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-        expiresIn: '30d',
-      });
+      if (!process.env.JWT_SECRET) {
+        throw new Error('JWT_SECRET is not configured');
+      }
+
+      const token = jwt.sign(
+        { id: user._id }, 
+        process.env.JWT_SECRET,
+        { expiresIn: '30d' }
+      );
 
       res.json({
         success: true,
@@ -129,7 +144,10 @@ router.route('/login')
       });
     } catch (error) {
       console.error('Login error:', error);
-      res.status(500).json({ success: false, message: error.message });
+      res.status(500).json({ 
+        success: false, 
+        message: error.message || 'Login failed' 
+      });
     }
   });
 
