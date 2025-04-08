@@ -6,6 +6,7 @@ import dotenv from "dotenv";
 import helmet from "helmet";
 import morgan from "morgan";
 import kpiRoutes from "./routes/kpi.js";
+import rewardsRoutes from './routes/rewards.js';
 import productRoutes from "./routes/product.js";
 import transactionRoutes from "./routes/transaction.js";
 import potsRoutes from "./routes/pots.js";
@@ -23,6 +24,7 @@ app.use(helmet());
 app.use(helmet.crossOriginResourcePolicy({ policy: "cross-origin" }));
 app.use(morgan("common"));
 app.use(bodyParser.json());
+app.use('/rewards', rewardsRoutes);
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(cors({
   origin: ['http://localhost:5173', 'http://127.0.0.1:5173'],

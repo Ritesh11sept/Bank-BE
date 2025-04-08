@@ -43,6 +43,49 @@ const UserSchema = new mongoose.Schema({
     type: Number,
     required: [true, 'Age is required'],
   },
+  rewards: {
+    points: {
+      type: Number,
+      default: 0
+    },
+    loginStreak: {
+      type: Number,
+      default: 0
+    },
+    lastLogin: {
+      type: Date,
+      default: null
+    },
+    scratchCards: [{
+      id: String,
+      type: {
+        type: String,
+        enum: ['cashback', 'discount', 'points']
+      },
+      value: String,
+      isNew: Boolean,
+      expiry: Date,
+      isRevealed: {
+        type: Boolean,
+        default: false
+      }
+    }],
+    claimedOffers: [{
+      offerId: String,
+      claimedAt: {
+        type: Date,
+        default: Date.now
+      }
+    }],
+    gameScores: [{
+      game: String,
+      score: Number,
+      playedAt: {
+        type: Date,
+        default: Date.now
+      }
+    }]
+  },
   bankBalance: {
     type: Number,
     default: 150000,
