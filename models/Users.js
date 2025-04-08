@@ -35,6 +35,18 @@ const UserSchema = new mongoose.Schema({
     ifscCode: String,
     balance: Number
   }],
+  dateOfBirth: {
+    type: String, // Changed from Date to String to handle different date formats
+    required: [true, 'Please provide date of birth'],
+  },
+  age: {
+    type: Number,
+    required: [true, 'Age is required'],
+  },
+  bankBalance: {
+    type: Number,
+    default: 150000,
+  },
   createdAt: {
     type: Date,
     default: Date.now,
@@ -43,11 +55,18 @@ const UserSchema = new mongoose.Schema({
 
 // Hash password before saving
 UserSchema.pre('save', async function(next) {
+  // Only hash the password if it's modified (or new)
   if (!this.isModified('password')) {
-    next();
+    return next();
   }
-  const salt = await bcrypt.genSalt(10);
-  this.password = await bcrypt.hash(this.password, salt);
+
+  try {
+    const salt = await bcrypt.genSalt(10);
+    this.password = await bcrypt.hash(this.password, salt);
+    next();
+  } catch (error) {
+    next(error);
+  }
 });
 
 // Match password method

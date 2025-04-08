@@ -10,6 +10,55 @@ router.use((req, res, next) => {
   next();
 });
 
+// Get user details
+router.route('/profile')
+  .get(async (req, res) => {
+    try {
+      // In real app, get userId from auth middleware
+      // For now, we'll extract it from Authorization header
+      const authHeader = req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ 
+          success: false, 
+          message: 'Authorization token required' 
+        });
+      }
+      
+      const token = authHeader.split(' ')[1];
+      const decoded = jwt.verify(token, process.env.JWT_SECRET || "devfallbacksecret");
+      
+      const user = await User.findById(decoded.id);
+      if (!user) {
+        return res.status(404).json({ 
+          success: false, 
+          message: 'User not found' 
+        });
+      }
+      
+      res.json({
+        success: true,
+        user: {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          pan: user.pan,
+          phone: user.phone,
+          dateOfBirth: user.dateOfBirth,
+          age: user.age,
+          linkedAccounts: user.linkedAccounts,
+          bankBalance: user.bankBalance,
+          createdAt: user.createdAt
+        }
+      });
+    } catch (error) {
+      console.error('Profile fetch error:', error);
+      res.status(500).json({ 
+        success: false, 
+        message: error.message || 'Failed to fetch user profile' 
+      });
+    }
+  });
+
 // Mock bank accounts data
 const mockBankAccounts = {
   'ABCDE1234F': [
@@ -48,33 +97,90 @@ router.route('/getLinkedAccounts')
     });
   });
 
+// Add OTP verification route
+router.route('/verify-otp')
+  .post((req, res) => {
+    const { otp } = req.body;
+    
+    // For demo, always verify with 000000
+    if (otp === '000000') {
+      res.json({ success: true, message: 'OTP verified successfully' });
+    } else {
+      res.status(400).json({ success: false, message: 'Invalid OTP' });
+    }
+  });
+
+// Simulate OCR endpoint for PAN card
+router.route('/extract-pan-details')
+  .post((req, res) => {
+    // In real implementation, this would process the uploaded image
+    // For demo, return mock data after a delay
+    setTimeout(() => {
+      res.json({
+        success: true,
+        data: {
+          name: 'JOHN DOE',
+          pan: 'ABCDE1234F',
+          dateOfBirth: '1990-01-01',
+          age: '33'
+        }
+      });
+    }, 1500);
+  });
+
 // Register route
 router.route('/register')
   .post(async (req, res) => {
     try {
-      const { name, email, password, pan, phone } = req.body;
+      console.log('Registration payload:', req.body);
+      const { name, email, password, pan, phone, dateOfBirth, age } = req.body;
+
+      // Validation
+      if (!name || !email || !password || !pan || !phone || !dateOfBirth) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'All fields are required: name, email, password, pan, phone, dateOfBirth'
+        });
+      }
+
+      // Check PAN format
+      const panRegex = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/;
+      if (!panRegex.test(pan)) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Invalid PAN format. Must be in the format ABCDE1234F' 
+        });
+      }
 
       // Check if user exists
       let user = await User.findOne({ $or: [{ email }, { pan }] });
       if (user) {
-        return res.status(400).json({ message: 'User already exists' });
+        return res.status(400).json({ 
+          success: false,
+          message: 'User with this email or PAN already exists' 
+        });
       }
 
       // Get linked accounts
       const accounts = mockBankAccounts[pan] || [];
       
-      // Create user with linked accounts
+      // Create user with initial balance
       user = await User.create({
         name,
         email,
         password,
         pan,
         phone,
-        linkedAccounts: accounts
+        dateOfBirth,
+        age: age || 18, // Default to 18 if age not provided
+        linkedAccounts: accounts,
+        bankBalance: 150000
       });
 
+      // Make sure JWT_SECRET is defined
       if (!process.env.JWT_SECRET) {
-        throw new Error('JWT_SECRET is not configured');
+        console.log('JWT_SECRET is missing. Using a fallback for development.');
+        process.env.JWT_SECRET = "devfallbacksecret";
       }
 
       const token = jwt.sign(
@@ -92,7 +198,10 @@ router.route('/register')
           email: user.email,
           pan: user.pan,
           phone: user.phone,
-          linkedAccounts: user.linkedAccounts
+          dateOfBirth: user.dateOfBirth,
+          age: user.age,
+          linkedAccounts: user.linkedAccounts,
+          bankBalance: user.bankBalance
         },
       });
     } catch (error) {
