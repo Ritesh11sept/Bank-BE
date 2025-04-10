@@ -54,6 +54,14 @@ router.post('/login-streak', async (req, res) => {
       // First login ever
       user.rewards.loginStreak = 1;
       user.rewards.points += 10; // Award points for first login
+      
+      // Add notification
+      user.notifications.push({
+        type: 'reward',
+        title: 'Welcome Bonus!',
+        message: 'You earned 10 points for your first login.',
+        icon: 'gift'
+      });
     } else {
       // Calculate days between logins
       const timeDiff = Math.abs(now - lastLogin);
@@ -69,6 +77,14 @@ router.post('/login-streak', async (req, res) => {
           // Weekly bonus
           streakBonus = 50;
           
+          // Add notification for weekly streak
+          user.notifications.push({
+            type: 'reward',
+            title: 'Weekly Streak Bonus!',
+            message: `Congratulations! You've logged in for ${user.rewards.loginStreak} consecutive days and earned 50 bonus points.`,
+            icon: 'calendar'
+          });
+          
           // Add a scratch card for weekly streak
           const newScratchCard = {
             id: `sc-${Date.now()}`,
@@ -83,6 +99,22 @@ router.post('/login-streak', async (req, res) => {
             user.rewards.scratchCards = [];
           }
           user.rewards.scratchCards.push(newScratchCard);
+          
+          // Add notification for scratch card
+          user.notifications.push({
+            type: 'reward',
+            title: 'New Scratch Card!',
+            message: 'You received a special scratch card for your weekly login streak.',
+            icon: 'gift'
+          });
+        } else {
+          // Regular streak notification
+          user.notifications.push({
+            type: 'reward',
+            title: 'Login Streak!',
+            message: `You've logged in for ${user.rewards.loginStreak} consecutive days and earned ${streakBonus} points.`,
+            icon: 'calendar'
+          });
         }
         
         user.rewards.points += streakBonus;
@@ -90,6 +122,14 @@ router.post('/login-streak', async (req, res) => {
         // Streak broken
         user.rewards.loginStreak = 1;
         user.rewards.points += 5; // Basic points for logging in
+        
+        // Add notification for streak reset
+        user.notifications.push({
+          type: 'alert',
+          title: 'Login Streak Reset',
+          message: 'Your login streak was reset. Visit daily to build your streak again!',
+          icon: 'calendar'
+        });
       }
       // If daysDiff = 0, same day login, don't change streak or add points
     }
@@ -99,7 +139,7 @@ router.post('/login-streak', async (req, res) => {
     
     // Add a daily scratch card if user doesn't have unrevealed cards
     const hasUnrevealedCard = user.rewards.scratchCards && 
-                              user.rewards.scratchCards.some(card => !card.isRevealed);
+                             user.rewards.scratchCards.some(card => !card.isRevealed);
     
     if (!hasUnrevealedCard) {
       if (!user.rewards.scratchCards) {
@@ -117,6 +157,14 @@ router.post('/login-streak', async (req, res) => {
       };
       
       user.rewards.scratchCards.push(newScratchCard);
+      
+      // Add notification for scratch card
+      user.notifications.push({
+        type: 'reward',
+        title: 'Daily Scratch Card',
+        message: 'You received a new scratch card for logging in today!',
+        icon: 'gift'
+      });
     }
     
     await user.save();
@@ -156,12 +204,25 @@ router.post('/scratch-card/:id', async (req, res) => {
     
     // Process reward
     const card = user.rewards.scratchCards[cardIndex];
+    let rewardMessage = '';
+    
     if (card.type === 'points') {
-      user.rewards.points += parseInt(card.value);
+      const pointsValue = parseInt(card.value);
+      user.rewards.points += pointsValue;
+      rewardMessage = `${pointsValue} points added to your account!`;
     } else if (card.type === 'cashback') {
-      // Add cashback to user's balance
-      user.bankBalance += parseInt(card.value);
+      const cashbackValue = parseInt(card.value);
+      user.bankBalance += cashbackValue;
+      rewardMessage = `₹${cashbackValue} cashback added to your account!`;
     }
+    
+    // Add notification for revealed card
+    user.notifications.push({
+      type: 'reward',
+      title: 'Scratch Card Reward!',
+      message: rewardMessage,
+      icon: 'gift'
+    });
     
     await user.save();
     
@@ -200,6 +261,14 @@ router.post('/game-score', async (req, res) => {
     const pointsAwarded = Math.floor(score / 10);
     user.rewards.points += pointsAwarded;
     
+    // Add notification for game points
+    user.notifications.push({
+      type: 'reward',
+      title: 'Game Reward!',
+      message: `You earned ${pointsAwarded} points from playing ${game}!`,
+      icon: 'game'
+    });
+    
     await user.save();
     
     res.json({
@@ -212,6 +281,195 @@ router.post('/game-score', async (req, res) => {
     res.status(401).json({ 
       success: false, 
       message: error.message || 'Failed to save game score' 
+    });
+  }
+});
+
+// Award pot interaction rewards
+router.post('/pot-reward', async (req, res) => {
+  try {
+    const { action, amount, potName } = req.body;
+    const user = await getUserFromToken(req);
+    
+    let pointsAwarded = 0;
+    let scratchCard = null;
+    
+    // Calculate rewards based on action
+    switch(action) {
+      case 'create':
+        // Award 20 points for creating a pot
+        pointsAwarded = 20;
+        user.rewards.points += pointsAwarded;
+        
+        // Add notification
+        user.notifications.push({
+          type: 'reward',
+          title: 'New Pot Bonus!',
+          message: `You earned ${pointsAwarded} points for creating a new savings pot.`,
+          icon: 'pot'
+        });
+        break;
+        
+      case 'deposit':
+        // Award 1 point for every 100 deposited, minimum 5 points
+        pointsAwarded = Math.max(5, Math.floor(amount / 100));
+        user.rewards.points += pointsAwarded;
+        
+        // Add notification
+        user.notifications.push({
+          type: 'reward',
+          title: 'Deposit Bonus!',
+          message: `You earned ${pointsAwarded} points for depositing ₹${amount} to your ${potName} pot.`,
+          icon: 'deposit'
+        });
+        
+        // 10% chance to get a scratch card for deposits over 1000
+        if (amount >= 1000 && Math.random() < 0.1) {
+          scratchCard = {
+            id: `sc-${Date.now()}`,
+            type: Math.random() > 0.6 ? 'cashback' : 'points',
+            value: Math.floor(amount * 0.05), // 5% of deposit amount
+            isNew: true,
+            expiry: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
+            isRevealed: false
+          };
+          
+          if (!user.rewards.scratchCards) {
+            user.rewards.scratchCards = [];
+          }
+          
+          user.rewards.scratchCards.push(scratchCard);
+          
+          // Add notification for scratch card
+          user.notifications.push({
+            type: 'reward',
+            title: 'Deposit Scratch Card!',
+            message: `You received a special scratch card for depositing to your ${potName} pot!`,
+            icon: 'gift'
+          });
+        }
+        break;
+        
+      case 'withdraw':
+        // Small reward for withdrawals
+        pointsAwarded = Math.floor(amount / 500); // 1 point per 500 withdrawn
+        if (pointsAwarded > 0) {
+          user.rewards.points += pointsAwarded;
+          
+          // Add notification
+          user.notifications.push({
+            type: 'reward',
+            title: 'Withdrawal Points',
+            message: `You earned ${pointsAwarded} points for your withdrawal.`,
+            icon: 'withdraw'
+          });
+        }
+        break;
+        
+      case 'goal-reached':
+        // Big reward for reaching a goal
+        pointsAwarded = 50;
+        user.rewards.points += pointsAwarded;
+        
+        // Always give a scratch card for completing a goal
+        scratchCard = {
+          id: `sc-${Date.now()}`,
+          type: Math.random() > 0.4 ? 'cashback' : 'points',
+          value: Math.floor(Math.random() * 200) + 100, // 100-300 reward
+          isNew: true,
+          expiry: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // 14 days from now
+          isRevealed: false
+        };
+        
+        if (!user.rewards.scratchCards) {
+          user.rewards.scratchCards = [];
+        }
+        
+        user.rewards.scratchCards.push(scratchCard);
+        
+        // Add notifications
+        user.notifications.push({
+          type: 'reward',
+          title: 'Goal Achieved!',
+          message: `Congratulations! You earned ${pointsAwarded} points for reaching your savings goal!`,
+          icon: 'goal'
+        });
+        
+        user.notifications.push({
+          type: 'reward',
+          title: 'Goal Achievement Bonus!',
+          message: 'You received a special scratch card for reaching your savings goal!',
+          icon: 'gift'
+        });
+        break;
+    }
+    
+    await user.save();
+    
+    res.json({
+      success: true,
+      pointsAwarded,
+      scratchCard,
+      rewards: user.rewards
+    });
+  } catch (error) {
+    console.error('Pot reward error:', error);
+    res.status(401).json({ 
+      success: false, 
+      message: error.message || 'Failed to award pot reward' 
+    });
+  }
+});
+
+// Get user notifications
+router.get('/notifications', async (req, res) => {
+  try {
+    const user = await getUserFromToken(req);
+    
+    res.json({
+      success: true,
+      notifications: user.notifications
+    });
+  } catch (error) {
+    console.error('Get notifications error:', error);
+    res.status(401).json({ 
+      success: false, 
+      message: error.message || 'Failed to get notifications' 
+    });
+  }
+});
+
+// Mark notifications as read
+router.post('/notifications/read', async (req, res) => {
+  try {
+    const { notificationIds } = req.body;
+    const user = await getUserFromToken(req);
+    
+    // If no IDs provided, mark all as read
+    if (!notificationIds || notificationIds.length === 0) {
+      user.notifications.forEach(notification => {
+        notification.isRead = true;
+      });
+    } else {
+      // Mark specific notifications as read
+      user.notifications.forEach(notification => {
+        if (notificationIds.includes(notification.id)) {
+          notification.isRead = true;
+        }
+      });
+    }
+    
+    await user.save();
+    
+    res.json({
+      success: true,
+      notifications: user.notifications
+    });
+  } catch (error) {
+    console.error('Mark notifications read error:', error);
+    res.status(401).json({ 
+      success: false, 
+      message: error.message || 'Failed to mark notifications as read' 
     });
   }
 });

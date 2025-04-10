@@ -2,13 +2,34 @@ import express from 'express';
 import { auth } from '../middleware/auth.js';
 import Pot from '../models/Pot.js';
 import mongoose from 'mongoose';
+import jwt from 'jsonwebtoken';
+import axios from 'axios';
+import User from '../models/Users.js';  // Changed from User.js to Users.js
 const router = express.Router();
+
+// Helper to get user from token
+const getUserFromToken = async (req) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    throw new Error('Authorization token required');
+  }
+  
+  const token = authHeader.split(' ')[1];
+  const decoded = jwt.verify(token, process.env.JWT_SECRET || "devfallbacksecret");
+  
+  const user = await User.findById(decoded.id);
+  if (!user) {
+    throw new Error('User not found');
+  }
+  
+  return user;
+};
 
 // Get all pots for current user
 router.get('/', auth, async (req, res) => {
   try {
-    console.log('Getting pots for user:', req.user.id);
-    const pots = await Pot.find({ userId: String(req.user.id) }).sort({ createdAt: -1 });
+    console.log('Getting pots for user:', req.user._id); // Changed from req.user.id to req.user._id
+    const pots = await Pot.find({ userId: req.user._id.toString() }).sort({ createdAt: -1 });
     console.log('Found pots:', pots);
     res.json(pots);
   } catch (error) {
@@ -20,98 +41,242 @@ router.get('/', auth, async (req, res) => {
   }
 });
 
-// Create a new pot
-router.post('/', auth, async (req, res) => {
+// Create pot - now using auth middleware for consistency
+router.post("/", auth, async (req, res) => {
   try {
-    const { name, category } = req.body;
-    console.log('Creating pot:', { name, category, userId: req.user.id });
+    const { name, category, goalAmount } = req.body;
     
-    const newPot = new Pot({
+    // Use the user from auth middleware instead of getting it again
+    const user = req.user;
+    
+    // Create the pot
+    const pot = new Pot({
       name,
       category,
-      userId: String(req.user.id)
+      goalAmount: goalAmount || 0,
+      balance: 0,
+      userId: user._id,
+      createdAt: new Date() // Explicitly set creation date
     });
     
-    const savedPot = await newPot.save();
-    console.log('Created pot:', savedPot);
-    res.status(201).json(savedPot);
-  } catch (error) {
-    console.error('Error creating pot:', error);
-    res.status(400).json({ 
-      message: 'Failed to create pot',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-});
-
-// Deposit money to a pot
-router.post('/:id/deposit', auth, async (req, res) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-  
-  try {
-    const { id } = req.params;
-    const { amount } = req.body;
+    await pot.save();
     
-    // Find pot and check ownership
-    const pot = await Pot.findOne({ _id: id, userId: String(req.user.id) });
-    if (!pot) {
-      return res.status(404).json({ message: 'Pot not found' });
+    // Award points for creating a pot
+    // Make API call to rewards service
+    try {
+      const rewardResponse = await axios.post(
+        `${req.protocol}://${req.get('host')}/rewards/pot-reward`,
+        {
+          action: 'create',
+          potName: name
+        },
+        {
+          headers: {
+            Authorization: req.headers.authorization
+          }
+        }
+      );
+      
+      // Use reward response if needed
+      const rewardData = rewardResponse.data;
+    } catch (rewardError) {
+      console.error('Error awarding pot creation reward:', rewardError);
+      // Continue - non-critical operation
     }
     
-    // Update pot balance
-    pot.balance += Number(amount);
-    await pot.save({ session });
-    
-    await session.commitTransaction();
-    res.json(pot);
-  } catch (error) {
-    await session.abortTransaction();
-    console.error('Error depositing to pot:', error);
-    res.status(400).json({ 
-      message: 'Failed to deposit',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    res.status(201).json({
+      success: true,
+      pot
     });
-  } finally {
-    session.endSession();
+  } catch (error) {
+    console.error('Create pot error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: error.message || 'Failed to create pot' 
+    });
   }
 });
 
-// Withdraw money from a pot
-router.post('/:id/withdraw', auth, async (req, res) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-  
+// Deposit to pot
+router.post("/:id/deposit", async (req, res) => {
   try {
     const { id } = req.params;
     const { amount } = req.body;
     
-    // Find pot and check ownership
-    const pot = await Pot.findOne({ _id: id, userId: String(req.user.id) });
+    if (!amount || amount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid amount'
+      });
+    }
+    
+    // First get the user to deduct from their balance
+    const user = await getUserFromToken(req);
+    
+    // Check if user has enough balance
+    if (user.bankBalance < amount) {
+      return res.status(400).json({
+        success: false,
+        message: 'Insufficient balance'
+      });
+    }
+    
+    // Find the pot
+    const pot = await Pot.findById(id);
     if (!pot) {
-      return res.status(404).json({ message: 'Pot not found' });
+      return res.status(404).json({
+        success: false,
+        message: 'Pot not found'
+      });
+    }
+    
+    // Verify pot belongs to user
+    if (pot.userId.toString() !== user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Unauthorized access to pot'
+      });
+    }
+    
+    // Deduct from user's balance
+    user.bankBalance -= Number(amount);
+    await user.save();
+    
+    // Add to pot's balance
+    pot.balance += Number(amount);
+    
+    // Check if goal is reached
+    const goalReached = pot.goalAmount > 0 && pot.balance >= pot.goalAmount && (pot.balance - amount) < pot.goalAmount;
+    
+    await pot.save();
+    
+    // Add transaction record
+    // ...existing transaction code if any...
+    
+    // Award points for deposit
+    try {
+      const rewardAction = goalReached ? 'goal-reached' : 'deposit';
+      
+      const rewardResponse = await axios.post(
+        `${req.protocol}://${req.get('host')}/rewards/pot-reward`,
+        {
+          action: rewardAction,
+          amount: Number(amount),
+          potName: pot.name
+        },
+        {
+          headers: {
+            Authorization: req.headers.authorization
+          }
+        }
+      );
+      
+      // Use reward response if needed
+      const rewardData = rewardResponse.data;
+    } catch (rewardError) {
+      console.error('Error awarding deposit reward:', rewardError);
+      // Continue - non-critical operation
+    }
+    
+    res.json({
+      success: true,
+      pot,
+      goalReached
+    });
+  } catch (error) {
+    console.error('Deposit error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: error.message || 'Failed to deposit to pot' 
+    });
+  }
+});
+
+// Withdraw from pot
+router.post("/:id/withdraw", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { amount } = req.body;
+    
+    if (!amount || amount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid amount'
+      });
+    }
+    
+    // Find the pot
+    const pot = await Pot.findById(id);
+    if (!pot) {
+      return res.status(404).json({
+        success: false,
+        message: 'Pot not found'
+      });
     }
     
     // Check if pot has enough balance
     if (pot.balance < amount) {
-      return res.status(400).json({ message: 'Insufficient funds in pot' });
+      return res.status(400).json({
+        success: false,
+        message: 'Insufficient pot balance'
+      });
     }
     
-    // Update pot balance
-    pot.balance -= Number(amount);
-    await pot.save({ session });
+    // Get the user to add to their balance
+    const user = await getUserFromToken(req);
     
-    await session.commitTransaction();
-    res.json(pot);
-  } catch (error) {
-    await session.abortTransaction();
-    console.error('Error withdrawing from pot:', error);
-    res.status(400).json({ 
-      message: 'Failed to withdraw',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    // Verify pot belongs to user
+    if (pot.userId.toString() !== user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Unauthorized access to pot'
+      });
+    }
+    
+    // Add to user's balance
+    user.bankBalance += Number(amount);
+    await user.save();
+    
+    // Deduct from pot's balance
+    pot.balance -= Number(amount);
+    await pot.save();
+    
+    // Add transaction record
+    // ...existing transaction code if any...
+    
+    // Award points for withdrawal
+    try {
+      const rewardResponse = await axios.post(
+        `${req.protocol}://${req.get('host')}/rewards/pot-reward`,
+        {
+          action: 'withdraw',
+          amount: Number(amount),
+          potName: pot.name
+        },
+        {
+          headers: {
+            Authorization: req.headers.authorization
+          }
+        }
+      );
+      
+      // Use reward response if needed
+      const rewardData = rewardResponse.data;
+    } catch (rewardError) {
+      console.error('Error awarding withdrawal reward:', rewardError);
+      // Continue - non-critical operation
+    }
+    
+    res.json({
+      success: true,
+      pot
     });
-  } finally {
-    session.endSession();
+  } catch (error) {
+    console.error('Withdraw error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: error.message || 'Failed to withdraw from pot' 
+    });
   }
 });
 

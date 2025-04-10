@@ -86,6 +86,32 @@ const UserSchema = new mongoose.Schema({
       }
     }]
   },
+  notifications: [{
+    id: {
+      type: String,
+      default: () => new mongoose.Types.ObjectId().toString()
+    },
+    type: {
+      type: String,
+      enum: ['reward', 'transaction', 'alert', 'system'],
+      default: 'system'
+    },
+    title: String,
+    message: String,
+    isRead: {
+      type: Boolean,
+      default: false
+    },
+    icon: {
+      type: String,
+      default: 'notification'
+    },
+    link: String,
+    createdAt: {
+      type: Date,
+      default: Date.now
+    }
+  }],
   bankBalance: {
     type: Number,
     default: 150000,

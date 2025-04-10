@@ -1,16 +1,37 @@
 import mongoose from 'mongoose';
 
-const PotSchema = new mongoose.Schema(
-  {
-    name: { type: String, required: true },
-    category: { type: String, required: true },
-    balance: { type: Number, default: 0 },
-    goalAmount: { type: Number, default: 0 },
-    userId: { type: String, required: true }, // Changed from ObjectId to String
+const potSchema = new mongoose.Schema({
+  name: {
+    type: String,
+    required: [true, 'Pot name is required'],
+    trim: true
   },
-  { timestamps: true }
-);
+  category: {
+    type: String,
+    required: [true, 'Category is required']
+  },
+  goalAmount: {
+    type: Number,
+    default: 0
+  },
+  balance: {
+    type: Number,
+    default: 0
+  },
+  userId: {
+    type: String,
+    required: true
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  },
+  updatedAt: {
+    type: Date,
+    default: Date.now
+  }
+}, { timestamps: true });
 
-const Pot = mongoose.model('Pot', PotSchema);
+const Pot = mongoose.model('Pot', potSchema);
 
 export default Pot;
