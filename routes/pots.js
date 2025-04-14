@@ -1,5 +1,5 @@
 import express from 'express';
-import { auth } from '../middleware/auth.js';
+import auth from '../middleware/auth.js'; // Changed from { auth } to default import
 import Pot from '../models/Pot.js';
 import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
@@ -28,8 +28,20 @@ const getUserFromToken = async (req) => {
 // Get all pots for current user
 router.get('/', auth, async (req, res) => {
   try {
-    console.log('Getting pots for user:', req.user._id); // Changed from req.user.id to req.user._id
-    const pots = await Pot.find({ userId: req.user._id.toString() }).sort({ createdAt: -1 });
+    // Make sure we have a valid user ID
+    const userId = req.user.id || req.user._id;
+    
+    if (!userId) {
+      return res.status(400).json({ 
+        message: 'User ID is missing in auth token',
+        error: 'Invalid user identification'
+      });
+    }
+
+    console.log('Getting pots for user:', userId);
+    
+    // Convert to string to ensure consistent comparison
+    const pots = await Pot.find({ userId: userId.toString() }).sort({ createdAt: -1 });
     console.log('Found pots:', pots);
     res.json(pots);
   } catch (error) {
@@ -46,8 +58,16 @@ router.post("/", auth, async (req, res) => {
   try {
     const { name, category, goalAmount } = req.body;
     
-    // Use the user from auth middleware instead of getting it again
-    const user = req.user;
+    // Use the user from auth middleware
+    // Handle both id and _id for flexibility
+    const userId = req.user.id || req.user._id;
+    
+    if (!userId) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'User ID is missing in auth token' 
+      });
+    }
     
     // Create the pot
     const pot = new Pot({
@@ -55,7 +75,7 @@ router.post("/", auth, async (req, res) => {
       category,
       goalAmount: goalAmount || 0,
       balance: 0,
-      userId: user._id,
+      userId: userId.toString(),
       createdAt: new Date() // Explicitly set creation date
     });
     
@@ -294,7 +314,14 @@ router.put('/:id/goal', auth, async (req, res) => {
       return res.status(400).json({ message: 'Invalid goal amount' });
     }
     
-    const pot = await Pot.findOne({ _id: id, userId: String(req.user.id) });
+    // Get user ID consistently
+    const userId = req.user.id || req.user._id;
+    
+    if (!userId) {
+      return res.status(400).json({ message: 'User ID is missing in auth token' });
+    }
+    
+    const pot = await Pot.findOne({ _id: id, userId: userId.toString() });
     if (!pot) {
       return res.status(404).json({ message: 'Pot not found' });
     }
@@ -317,8 +344,15 @@ router.delete('/:id', auth, async (req, res) => {
   try {
     const { id } = req.params;
     
+    // Get user ID consistently
+    const userId = req.user.id || req.user._id;
+    
+    if (!userId) {
+      return res.status(400).json({ message: 'User ID is missing in auth token' });
+    }
+    
     // Find pot and check ownership
-    const pot = await Pot.findOne({ _id: id, userId: String(req.user.id) });
+    const pot = await Pot.findOne({ _id: id, userId: userId.toString() });
     if (!pot) {
       return res.status(404).json({ message: 'Pot not found' });
     }

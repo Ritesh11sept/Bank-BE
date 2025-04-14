@@ -11,6 +11,7 @@ import productRoutes from "./routes/product.js";
 import transactionRoutes from "./routes/transaction.js";
 import potsRoutes from "./routes/pots.js";
 import userRoutes from "./routes/user.js";
+import ticketsRoutes from "./routes/tickets.js";
 import KPI from "./models/KPI.js";
 import Product from "./models/Product.js";
 import Transaction from "./models/Transaction.js";
@@ -42,6 +43,9 @@ app.use("/user", userRoutes);
 
 // Rewards system routes
 app.use("/rewards", rewardsRoutes);
+
+// Support ticket routes
+app.use("/tickets", ticketsRoutes);
 
 // Add some debugging middleware
 app.use((req, res, next) => {
