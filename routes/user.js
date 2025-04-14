@@ -2,6 +2,7 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import User from '../models/Users.js'; // Updated to use Users.js instead of User.js
 import auth from '../middleware/auth.js'; // Ensure correct auth import
+import Transaction from '../models/Transaction.js';
 
 const router = express.Router();
 
@@ -257,6 +258,232 @@ router.route('/login')
       res.status(500).json({ 
         success: false, 
         message: error.message || 'Login failed' 
+      });
+    }
+  });
+
+// Get all users (for transfer functionality)
+router.route('/all-users')
+  .get(async (req, res) => {
+    try {
+      console.log('Fetching all users for transfer functionality');
+      
+      // Extract user ID from token for filtering
+      let userId = null;
+      
+      // Get the auth token from the header
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        const token = authHeader.split(' ')[1];
+        try {
+          const decoded = jwt.verify(token, process.env.JWT_SECRET || "devfallbacksecret");
+          userId = decoded.id;
+          console.log('Current user ID from token:', userId);
+        } catch (error) {
+          console.error("Token verification failed:", error);
+          return res.status(401).json({
+            success: false,
+            message: 'Invalid authentication token'
+          });
+        }
+      } else {
+        console.log('No authorization token provided');
+        return res.status(401).json({
+          success: false,
+          message: 'Authentication token required'
+        });
+      }
+      
+      // Validate user exists
+      const currentUser = await User.findById(userId);
+      if (!currentUser) {
+        console.error('User not found for ID:', userId);
+        return res.status(404).json({
+          success: false,
+          message: 'User not found'
+        });
+      }
+      
+      // Find all users except current user
+      console.log('Finding all users except:', userId);
+      const users = await User.find(
+        { _id: { $ne: userId } }, 
+        'name email _id phone'
+      ).limit(20);
+      
+      console.log(`Found ${users.length} users for transfer list`);
+      
+      // Check if we found users, and if not, create a dummy user for testing
+      if (users.length === 0) {
+        console.log('No other users found - checking total user count');
+        const totalUsers = await User.countDocuments({});
+        console.log(`Total users in database: ${totalUsers}`);
+        
+        if (totalUsers <= 1) {
+          console.log('Creating a dummy test user for transfers');
+          try {
+            // Create a dummy user for testing transfers
+            const dummyUser = new User({
+              name: "Test User",
+              email: "test@example.com",
+              password: "password123",
+              pan: "TESTG1234H",
+              phone: "9876543210",
+              dateOfBirth: "1990-01-01",
+              age: 33,
+              bankBalance: 50000
+            });
+            await dummyUser.save();
+            console.log('Created dummy user:', dummyUser._id);
+            
+            // Add the dummy user to our results
+            users.push({
+              _id: dummyUser._id,
+              name: dummyUser.name,
+              email: dummyUser.email,
+              phone: dummyUser.phone
+            });
+          } catch (dummyError) {
+            console.error('Failed to create dummy user:', dummyError);
+          }
+        }
+      }
+      
+      res.json({
+        success: true,
+        users
+      });
+    } catch (error) {
+      console.error('Error fetching users:', error);
+      res.status(500).json({ 
+        success: false, 
+        message: error.message || 'Failed to fetch users' 
+      });
+    }
+  });
+
+// Transfer money between users
+router.route('/transfer')
+  .post(auth, async (req, res) => {
+    try {
+      const { receiverId, amount, note } = req.body;
+      const senderId = req.user.id;
+      
+      if (!receiverId || !amount || amount <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid transfer details'
+        });
+      }
+      
+      // Validate sender has enough balance
+      const sender = await User.findById(senderId);
+      if (!sender || sender.bankBalance < amount) {
+        return res.status(400).json({
+          success: false,
+          message: 'Insufficient balance'
+        });
+      }
+      
+      // Validate receiver exists
+      const receiver = await User.findById(receiverId);
+      if (!receiver) {
+        return res.status(404).json({
+          success: false,
+          message: 'Receiver not found'
+        });
+      }
+      
+      // Execute transfer
+      sender.bankBalance -= parseFloat(amount);
+      receiver.bankBalance += parseFloat(amount);
+      
+      // Add transaction record
+      const transaction = new Transaction({
+        senderId,
+        receiverId,
+        senderName: sender.name,
+        receiverName: receiver.name,
+        amount: parseFloat(amount),
+        note,
+        date: new Date()
+      });
+      
+      // Add notifications for both users
+      sender.notifications.unshift({
+        type: 'transaction',
+        title: 'Money Sent',
+        message: `You sent ₹${amount} to ${receiver.name}`,
+        icon: 'withdraw',
+        link: '/transactions'
+      });
+      
+      receiver.notifications.unshift({
+        type: 'transaction',
+        title: 'Money Received',
+        message: `You received ₹${amount} from ${sender.name}`,
+        icon: 'deposit',
+        link: '/transactions'
+      });
+      
+      // Save everything
+      await Promise.all([
+        sender.save(),
+        receiver.save(),
+        transaction.save()
+      ]);
+      
+      res.json({
+        success: true,
+        message: 'Transfer completed successfully',
+        transaction: {
+          id: transaction._id,
+          amount,
+          receiverName: receiver.name,
+          date: transaction.date
+        }
+      });
+    } catch (error) {
+      console.error('Transfer error:', error);
+      res.status(500).json({ 
+        success: false, 
+        message: error.message || 'Transfer failed' 
+      });
+    }
+  });
+
+// Get user transactions
+router.route('/transactions')
+  .get(auth, async (req, res) => {
+    try {
+      const userId = req.user.id;
+      
+      // Find all transactions where user is sender or receiver
+      const transactions = await Transaction.find({
+        $or: [
+          { senderId: userId },
+          { receiverId: userId }
+        ]
+      }).sort({ date: -1 }).limit(50);
+      
+      // Add type field to each transaction
+      const processedTransactions = transactions.map(transaction => {
+        const isCredit = transaction.receiverId.toString() === userId.toString();
+        return {
+          ...transaction._doc,
+          type: isCredit ? 'credit' : 'debit'
+        };
+      });
+      
+      res.json({
+        success: true,
+        transactions: processedTransactions
+      });
+    } catch (error) {
+      console.error('Transactions fetch error:', error);
+      res.status(500).json({ 
+        success: false, 
+        message: error.message || 'Failed to fetch transactions' 
       });
     }
   });

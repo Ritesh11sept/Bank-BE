@@ -1,30 +1,42 @@
-import mongoose from "mongoose";
-import { loadType } from "mongoose-currency";
+import mongoose from 'mongoose';
 
-const Schema = mongoose.Schema;
-loadType(mongoose);
-
-const TransactionSchema = new Schema(
-  {
-    buyer: {
-      type: String,
-      required: true,
-    },
-    amount: {
-      type: mongoose.Types.Currency,
-      currency: "USD",
-      get: (v) => v / 100,
-    },
-    productIds: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "Product",
-      },
-    ],
+const TransactionSchema = new mongoose.Schema({
+  senderId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
   },
-  { timestamps: true, toJSON: { getters: true } }
-);
+  receiverId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  senderName: {
+    type: String,
+    required: true
+  },
+  receiverName: {
+    type: String,
+    required: true
+  },
+  amount: {
+    type: Number,
+    required: true,
+    min: 1
+  },
+  note: {
+    type: String,
+    default: ""
+  },
+  date: {
+    type: Date,
+    default: Date.now
+  },
+  status: {
+    type: String,
+    enum: ['completed', 'pending', 'failed'],
+    default: 'completed'
+  }
+});
 
-const Transaction = mongoose.model("Transaction", TransactionSchema);
-
-export default Transaction;
+export default mongoose.model('Transaction', TransactionSchema);
