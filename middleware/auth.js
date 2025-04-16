@@ -1,41 +1,35 @@
 import jwt from 'jsonwebtoken';
-// If this middleware needs to access User model, update the import:
-// import User from "../models/Users.js";
 
 const auth = (req, res, next) => {
   try {
     // Get token from header
-    const token = req.header('Authorization')?.replace('Bearer ', '');
+    const authHeader = req.header('Authorization');
     
-    if (!token) {
-      return res.status(401).json({ message: 'No authentication token, access denied' });
+    console.log('Auth header:', authHeader);
+    
+    // Check if no auth header
+    if (!authHeader) {
+      console.log('No Authorization header found');
+      return res.status(401).json({ message: 'Authorization denied, no token provided' });
     }
-
-    // Development mode - allow "temp_token" to bypass authentication
-    if (process.env.NODE_ENV !== 'production' && token === 'temp_token') {
-      // Set a temporary user for development
-      req.user = { id: 'temp_user_id', isDemo: true };
-      return next();
-    }
-
+    
+    // Extract token (removes 'Bearer ' prefix if present)
+    const token = authHeader.startsWith('Bearer ') 
+      ? authHeader.substring(7, authHeader.length) 
+      : authHeader;
+    
+    console.log('Verifying token...');
+    
     // Verify token
-    try {
-      const verified = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret');
-      req.user = verified;
-      next();
-    } catch (verifyError) {
-      // Special case for development mode with temp token
-      if (process.env.NODE_ENV !== 'production' && 
-          req.header('Authorization')?.replace('Bearer ', '') === 'temp_token') {
-        req.user = { id: 'temp_user_id', isDemo: true };
-        return next();
-      }
-      
-      throw verifyError;
-    }
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret');
+    
+    // Add user from payload
+    req.user = decoded;
+    console.log('User authenticated with ID:', req.user.id);
+    next();
   } catch (err) {
-    console.error('Auth middleware error:', err.message);
-    res.status(401).json({ message: 'Invalid token, access denied' });
+    console.error('Auth error:', err.message);
+    res.status(401).json({ message: 'Token is not valid' });
   }
 };
 

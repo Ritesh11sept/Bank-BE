@@ -5,17 +5,12 @@ import cors from "cors";
 import dotenv from "dotenv";
 import helmet from "helmet";
 import morgan from "morgan";
-import kpiRoutes from "./routes/kpi.js";
 import rewardsRoutes from './routes/rewards.js';
-import productRoutes from "./routes/product.js";
 import transactionRoutes from "./routes/transaction.js";
 import potsRoutes from "./routes/pots.js";
 import userRoutes from "./routes/user.js";
 import ticketsRoutes from "./routes/tickets.js";
-import KPI from "./models/KPI.js";
-import Product from "./models/Product.js";
 import Transaction from "./models/Transaction.js";
-import { kpis, products, transactions } from "./data/data.js";
 
 /* CONFIGURATIONS */
 dotenv.config();
@@ -35,8 +30,6 @@ app.use(cors({
 
 /* ROUTES */
 // Main application routes
-app.use("/kpi", kpiRoutes);
-app.use("/product", productRoutes);
 app.use("/transaction", transactionRoutes);
 app.use("/pots", potsRoutes);
 app.use("/user", userRoutes);
@@ -75,11 +68,7 @@ mongoose
     console.log('MongoDB Connected Successfully');
     
     /* ADD DATA ONE TIME ONLY OR AS NEEDED */
-    // Uncomment if you need to reset/seed the database
-    // await mongoose.connection.db.dropDatabase();
-    // KPI.insertMany(kpis);
-    // Product.insertMany(products);
-    // Transaction.insertMany(transactions);
+    // Database seeding can be implemented here if needed in the future
   })
   .catch((error) => {
     console.error(`MongoDB Connection Error: ${error}`);

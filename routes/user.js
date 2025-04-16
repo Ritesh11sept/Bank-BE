@@ -12,54 +12,30 @@ router.use((req, res, next) => {
   next();
 });
 
-// Get user details
-router.route('/profile')
-  .get(async (req, res) => {
-    try {
-      // In real app, get userId from auth middleware
-      // For now, we'll extract it from Authorization header
-      const authHeader = req.headers.authorization;
-      if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return res.status(401).json({ 
-          success: false, 
-          message: 'Authorization token required' 
-        });
-      }
-      
-      const token = authHeader.split(' ')[1];
-      const decoded = jwt.verify(token, process.env.JWT_SECRET || "devfallbacksecret");
-      
-      const user = await User.findById(decoded.id);
-      if (!user) {
-        return res.status(404).json({ 
-          success: false, 
-          message: 'User not found' 
-        });
-      }
-      
-      res.json({
-        success: true,
-        user: {
-          id: user._id,
-          name: user.name,
-          email: user.email,
-          pan: user.pan,
-          phone: user.phone,
-          dateOfBirth: user.dateOfBirth,
-          age: user.age,
-          linkedAccounts: user.linkedAccounts,
-          bankBalance: user.bankBalance,
-          createdAt: user.createdAt
-        }
-      });
-    } catch (error) {
-      console.error('Profile fetch error:', error);
-      res.status(500).json({ 
-        success: false, 
-        message: error.message || 'Failed to fetch user profile' 
-      });
+// Get user profile with detailed information
+router.get("/profile", auth, async (req, res) => {
+  try {
+    console.log("Profile request for user:", req.user.id);
+    
+    const user = await User.findById(req.user.id).select("-password");
+    
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
     }
-  });
+
+    // Include the ID in the response
+    const userData = {
+      ...user.toObject(),
+      _id: user._id
+    };
+    
+    console.log("Sending user profile:", userData);
+    res.status(200).json(userData);
+  } catch (error) {
+    console.error("Error fetching user profile:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+});
 
 // Mock bank accounts data
 const mockBankAccounts = {
