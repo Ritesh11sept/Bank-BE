@@ -1,7 +1,7 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
-import User from '../models/Users.js'; // Updated to use Users.js instead of User.js
-import auth from '../middleware/auth.js'; // Ensure correct auth import
+import User from '../models/Users.js'; 
+import auth from '../middleware/auth.js'; 
 import Transaction from '../models/Transaction.js';
 
 const router = express.Router();
@@ -238,96 +238,61 @@ router.route('/login')
     }
   });
 
-// Get all users (for transfer functionality)
+// Get admin user stats
+router.route('/admin/stats')
+  .get(async (req, res) => {
+    try {
+      const totalUsers = await User.countDocuments({});
+      const activeUsers = await User.countDocuments({ status: 'active' });
+      const inactiveUsers = await User.countDocuments({ status: 'inactive' });
+      const blockedUsers = await User.countDocuments({ status: 'blocked' });
+      
+      // Get new users in last 30 days
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const newUsers = await User.countDocuments({ 
+        createdAt: { $gte: thirtyDaysAgo } 
+      });
+
+      res.json({
+        success: true,
+        stats: {
+          totalUsers,
+          activeUsers,
+          inactiveUsers,
+          blockedUsers,
+          newUsers,
+          userGrowthRate: totalUsers > 0 ? (newUsers / totalUsers) * 100 : 0
+        }
+      });
+    } catch (error) {
+      console.error('Error fetching admin stats:', error);
+      res.status(500).json({ 
+        success: false, 
+        message: error.message || 'Failed to fetch admin stats' 
+      });
+    }
+  });
+
+// Update all-users route to include more details
 router.route('/all-users')
   .get(async (req, res) => {
     try {
-      console.log('Fetching all users for transfer functionality');
-      
-      // Extract user ID from token for filtering
-      let userId = null;
-      
-      // Get the auth token from the header
-      const authHeader = req.headers.authorization;
-      if (authHeader && authHeader.startsWith('Bearer ')) {
-        const token = authHeader.split(' ')[1];
-        try {
-          const decoded = jwt.verify(token, process.env.JWT_SECRET || "devfallbacksecret");
-          userId = decoded.id;
-          console.log('Current user ID from token:', userId);
-        } catch (error) {
-          console.error("Token verification failed:", error);
-          return res.status(401).json({
-            success: false,
-            message: 'Invalid authentication token'
-          });
-        }
-      } else {
-        console.log('No authorization token provided');
-        return res.status(401).json({
-          success: false,
-          message: 'Authentication token required'
-        });
-      }
-      
-      // Validate user exists
-      const currentUser = await User.findById(userId);
-      if (!currentUser) {
-        console.error('User not found for ID:', userId);
-        return res.status(404).json({
-          success: false,
-          message: 'User not found'
-        });
-      }
-      
-      // Find all users except current user
-      console.log('Finding all users except:', userId);
-      const users = await User.find(
-        { _id: { $ne: userId } }, 
-        'name email _id phone'
-      ).limit(20);
-      
-      console.log(`Found ${users.length} users for transfer list`);
-      
-      // Check if we found users, and if not, create a dummy user for testing
-      if (users.length === 0) {
-        console.log('No other users found - checking total user count');
-        const totalUsers = await User.countDocuments({});
-        console.log(`Total users in database: ${totalUsers}`);
-        
-        if (totalUsers <= 1) {
-          console.log('Creating a dummy test user for transfers');
-          try {
-            // Create a dummy user for testing transfers
-            const dummyUser = new User({
-              name: "Test User",
-              email: "test@example.com",
-              password: "password123",
-              pan: "TESTG1234H",
-              phone: "9876543210",
-              dateOfBirth: "1990-01-01",
-              age: 33,
-              bankBalance: 50000
-            });
-            await dummyUser.save();
-            console.log('Created dummy user:', dummyUser._id);
-            
-            // Add the dummy user to our results
-            users.push({
-              _id: dummyUser._id,
-              name: dummyUser.name,
-              email: dummyUser.email,
-              phone: dummyUser.phone
-            });
-          } catch (dummyError) {
-            console.error('Failed to create dummy user:', dummyError);
-          }
-        }
-      }
-      
+      const users = await User.find({})
+        .select('name email pan phone status createdAt bankBalance')
+        .sort({ createdAt: -1 });
+
       res.json({
         success: true,
-        users
+        users: users.map(user => ({
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          pan: user.pan,
+          phone: user.phone,
+          status: user.status || 'active',
+          createdAt: user.createdAt,
+          balance: user.bankBalance || 0
+        }))
       });
     } catch (error) {
       console.error('Error fetching users:', error);
@@ -434,13 +399,13 @@ router.route('/transactions')
     try {
       const userId = req.user.id;
       
-      // Find all transactions where user is sender or receiver
+      // Remove limit to fetch all transactions
       const transactions = await Transaction.find({
         $or: [
           { senderId: userId },
           { receiverId: userId }
         ]
-      }).sort({ date: -1 }).limit(50);
+      }).sort({ date: -1 });
       
       // Add type field to each transaction
       const processedTransactions = transactions.map(transaction => {

@@ -72,27 +72,17 @@ const demoTickets = [
   }
 ];
 
-// Get all tickets (admin only)
-router.get("/", auth, async (req, res) => {
+// Get all tickets (public access)
+router.get("/", async (req, res) => {
   try {
-    // Handle demo mode
-    if (req.user.isDemo) {
-      return res.status(200).json(demoTickets);
-    }
-    
-    // Check if user is admin
-    const user = await User.findById(req.user.id);
-    if (!user || !user.isAdmin) {
-      return res.status(403).json({ message: "Not authorized" });
-    }
-
+    // Find all tickets without auth check
     const tickets = await Ticket.find()
       .sort({ updatedAt: -1 })
       .populate("userId", "name email");
-    
+
     res.status(200).json(tickets);
   } catch (error) {
-    console.error("Error getting all tickets:", error);
+    console.error("Error getting tickets:", error);
     res.status(500).json({ message: "Server error", error: error.message });
   }
 });
