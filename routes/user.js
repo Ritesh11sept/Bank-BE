@@ -1,30 +1,23 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import User from '../models/Users.js'; 
+import auth from '../middleware/auth.js'; 
 import Transaction from '../models/Transaction.js';
 
 const router = express.Router();
 
-// Add debugging middleware with more verbose logging
+// Add debugging middleware
 router.use((req, res, next) => {
   console.log('User route hit:', req.method, req.path, req.body);
-  console.log('Authorization header:', req.headers.authorization || 'none');
   next();
 });
 
-// Get user profile with detailed information - REMOVED AUTH MIDDLEWARE
-router.get("/profile", async (req, res) => {
+// Get user profile with detailed information
+router.get("/profile", auth, async (req, res) => {
   try {
-    // If no user ID provided in request, return error
-    const userId = req.query.userId || (req.user && req.user.id);
+    console.log("Profile request for user:", req.user.id);
     
-    if (!userId) {
-      return res.status(400).json({ message: "User ID is required" });
-    }
-    
-    console.log("Profile request for user:", userId);
-    
-    const user = await User.findById(userId).select("-password");
+    const user = await User.findById(req.user.id).select("-password");
     
     if (!user) {
       return res.status(404).json({ message: "User not found" });
@@ -36,7 +29,7 @@ router.get("/profile", async (req, res) => {
       _id: user._id
     };
     
-    console.log("Sending user profile");
+    console.log("Sending user profile:", userData);
     res.status(200).json(userData);
   } catch (error) {
     console.error("Error fetching user profile:", error);
@@ -256,58 +249,33 @@ router.route('/register')
     }
   });
 
-// Login route - Update to always succeed in production
+// Login route
 router.route('/login')
   .post(async (req, res) => {
     try {
       const { pan, password } = req.body;
-      console.log('Login attempt with PAN:', pan);
 
-      // Try to find the user
-      let user = await User.findOne({ pan }).select('+password');
-      
-      // If user not found or password doesn't match, create a mock successful response
+      const user = await User.findOne({ pan }).select('+password');
       if (!user) {
-        console.log('User not found, creating mock response');
-        
-        // Create a mock token that will pass validation
-        const mockToken = jwt.sign(
-          { id: "mock_user_id" },
-          process.env.JWT_SECRET || 'your_jwt_secret',
-          { expiresIn: '30d' }
-        );
-        
-        return res.status(200).json({
-          success: true,
-          token: mockToken,
-          user: {
-            id: "mock_user_id",
-            name: "Demo User",
-            email: "demo@example.com",
-            pan: pan || "ABCDE1234F",
-            phone: "1234567890",
-            linkedAccounts: []
-          }
-        });
+        return res.status(401).json({ message: 'Invalid credentials' });
       }
 
-      // For real users, still verify password but don't reject on failure
-      let validPassword = false;
-      try {
-        validPassword = await user.matchPassword(password);
-      } catch (passwordError) {
-        console.error('Password match error:', passwordError);
+      const isMatch = await user.matchPassword(password);
+      if (!isMatch) {
+        return res.status(401).json({ message: 'Invalid credentials' });
       }
 
-      // Even if password verification fails, still allow login in production
-      // Create a token with the real user ID
+      if (!process.env.JWT_SECRET) {
+        throw new Error('JWT_SECRET is not configured');
+      }
+
       const token = jwt.sign(
         { id: user._id }, 
-        process.env.JWT_SECRET || 'your_jwt_secret',
+        process.env.JWT_SECRET,
         { expiresIn: '30d' }
       );
 
-      res.status(200).json({
+      res.json({
         success: true,
         token,
         user: {
@@ -316,35 +284,19 @@ router.route('/login')
           email: user.email,
           pan: user.pan,
           phone: user.phone,
-          linkedAccounts: user.linkedAccounts || []
+          linkedAccounts: user.linkedAccounts
         },
       });
     } catch (error) {
       console.error('Login error:', error);
-      
-      // Even on error, return a successful response with mock data
-      const mockToken = jwt.sign(
-        { id: "error_user_id" },
-        process.env.JWT_SECRET || 'your_jwt_secret',
-        { expiresIn: '30d' }
-      );
-      
-      res.status(200).json({
-        success: true,
-        token: mockToken,
-        user: {
-          id: "error_user_id",
-          name: "Error Recovery User",
-          email: "recovery@example.com",
-          pan: req.body.pan || "RECOVERY123F",
-          phone: "0000000000",
-          linkedAccounts: []
-        }
+      res.status(500).json({ 
+        success: false, 
+        message: error.message || 'Login failed' 
       });
     }
   });
 
-// Get admin user stats - REMOVED AUTH MIDDLEWARE
+// Get admin user stats
 router.route('/admin/stats')
   .get(async (req, res) => {
     try {
@@ -379,7 +331,7 @@ router.route('/admin/stats')
     }
   });
 
-// Update all-users route to include more details - REMOVED AUTH MIDDLEWARE
+// Update all-users route to include more details
 router.route('/all-users')
   .get(async (req, res) => {
     try {
@@ -409,13 +361,14 @@ router.route('/all-users')
     }
   });
 
-// Transfer money between users - REMOVED AUTH MIDDLEWARE
+// Transfer money between users
 router.route('/transfer')
-  .post(async (req, res) => {
+  .post(auth, async (req, res) => {
     try {
-      const { senderId, receiverId, amount, note } = req.body;
+      const { receiverId, amount, note } = req.body;
+      const senderId = req.user.id;
       
-      if (!senderId || !receiverId || !amount || amount <= 0) {
+      if (!receiverId || !amount || amount <= 0) {
         return res.status(400).json({
           success: false,
           message: 'Invalid transfer details'
@@ -456,9 +409,6 @@ router.route('/transfer')
       });
       
       // Add notifications for both users
-      sender.notifications = sender.notifications || [];
-      receiver.notifications = receiver.notifications || [];
-      
       sender.notifications.unshift({
         type: 'transaction',
         title: 'Money Sent',
@@ -501,18 +451,11 @@ router.route('/transfer')
     }
   });
 
-// Get user transactions - REMOVED AUTH MIDDLEWARE
+// Get user transactions
 router.route('/transactions')
-  .get(async (req, res) => {
+  .get(auth, async (req, res) => {
     try {
-      const userId = req.query.userId || (req.user && req.user.id);
-      
-      if (!userId) {
-        return res.status(400).json({ 
-          success: false, 
-          message: 'User ID is required as a query parameter' 
-        });
-      }
+      const userId = req.user.id;
       
       // Remove limit to fetch all transactions
       const transactions = await Transaction.find({

@@ -7,41 +7,29 @@ const auth = (req, res, next) => {
     
     console.log('Auth header:', authHeader);
     
-    // BYPASS AUTHENTICATION: Always allow requests to proceed
-    // This makes all routes public without requiring authentication
-    
-    // If token exists, try to verify it for user identification
-    if (authHeader) {
-      try {
-        // Extract token (removes 'Bearer ' prefix if present)
-        const token = authHeader.startsWith('Bearer ') 
-          ? authHeader.substring(7, authHeader.length) 
-          : authHeader;
-        
-        console.log('Verifying token for identification purposes...');
-        
-        // Verify token
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret');
-        
-        // Add user from payload
-        req.user = decoded;
-        console.log('User identified with ID:', req.user.id);
-      } catch (tokenError) {
-        // If token verification fails, just log it
-        console.log('Token verification failed, continuing as public access:', tokenError.message);
-        req.user = null;
-      }
-    } else {
-      console.log('No Authorization header found, continuing as public access');
-      req.user = null;
+    // Check if no auth header
+    if (!authHeader) {
+      console.log('No Authorization header found');
+      return res.status(401).json({ message: 'Authorization denied, no token provided' });
     }
     
-    // Continue with request processing regardless of auth status
+    // Extract token (removes 'Bearer ' prefix if present)
+    const token = authHeader.startsWith('Bearer ') 
+      ? authHeader.substring(7, authHeader.length) 
+      : authHeader;
+    
+    console.log('Verifying token...');
+    
+    // Verify token
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret');
+    
+    // Add user from payload
+    req.user = decoded;
+    console.log('User authenticated with ID:', req.user.id);
     next();
   } catch (err) {
-    console.error('Auth error, continuing as public access:', err.message);
-    req.user = null;
-    next();
+    console.error('Auth error:', err.message);
+    res.status(401).json({ message: 'Token is not valid' });
   }
 };
 
