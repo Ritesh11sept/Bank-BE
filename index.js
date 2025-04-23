@@ -11,6 +11,9 @@ import potsRoutes from "./routes/pots.js";
 import userRoutes from "./routes/user.js";
 import ticketsRoutes from "./routes/tickets.js";
 import Transaction from "./models/Transaction.js";
+// Add these imports to ensure models are registered
+import "./models/Users.js";
+import "./models/Ticket.js";
 
 /* CONFIGURATIONS */
 dotenv.config();
@@ -24,9 +27,17 @@ app.use(bodyParser.urlencoded({ extended: false }));
 
 // Improved CORS handling
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*'); // Allow all origins
+  // Allow specific origins instead of all (*) when using credentials
+  const allowedOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:3000'];
+  const origin = req.headers.origin;
+  if (allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+  }
+  
+  // Add the credentials header - this is crucial
+  res.header('Access-Control-Allow-Credentials', 'true');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
   
   // Handle preflight OPTIONS request
   if (req.method === 'OPTIONS') {
@@ -36,10 +47,10 @@ app.use((req, res, next) => {
   next();
 });
 
-// Keep the existing CORS middleware for additional configuration
+// Update the existing CORS middleware to ensure consistent settings
 app.use(cors({
   origin: ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:3000'],
-  credentials: true,
+  credentials: true, // Make sure this is set to true
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Origin', 'Accept']
 }));

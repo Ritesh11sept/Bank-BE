@@ -1,135 +1,96 @@
-import mongoose from 'mongoose';
-import bcrypt from 'bcryptjs';
+import mongoose from "mongoose";
+import bcrypt from "bcryptjs";
 
-const UserSchema = new mongoose.Schema({
-  name: {
-    type: String,
-    required: [true, 'Please provide a name'],
-  },
-  email: {
-    type: String,
-    required: [true, 'Please provide an email'],
-    unique: true,
-    match: [/^\S+@\S+\.\S+$/, 'Please provide a valid email'],
-  },
-  pan: {
-    type: String,
-    required: [true, 'Please provide PAN number'],
-    unique: true,
-    match: [/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/, 'Please provide a valid PAN number'],
-  },
-  phone: {
-    type: String,
-    required: [true, 'Please provide phone number'],
-    match: [/^[0-9]{10}$/, 'Please provide a valid phone number'],
-  },
-  password: {
-    type: String,
-    required: [true, 'Please provide a password'],
-    minlength: 6,
-    select: false,
-  },
-  linkedAccounts: [{
-    bankName: String,
-    accountNumber: String,
-    ifscCode: String,
-    balance: Number
-  }],
-  dateOfBirth: {
-    type: String, // Changed from Date to String to handle different date formats
-    required: [true, 'Please provide date of birth'],
-  },
-  age: {
-    type: Number,
-    required: [true, 'Age is required'],
-  },
-  rewards: {
-    points: {
-      type: Number,
-      default: 0
-    },
-    loginStreak: {
-      type: Number,
-      default: 0
-    },
-    lastLogin: {
-      type: Date,
-      default: null
-    },
-    scratchCards: [{
-      id: String,
-      type: {
-        type: String,
-        enum: ['cashback', 'discount', 'points']
-      },
-      value: String,
-      isNew: Boolean,
-      expiry: Date,
-      isRevealed: {
-        type: Boolean,
-        default: false
-      }
-    }],
-    claimedOffers: [{
-      offerId: String,
-      claimedAt: {
-        type: Date,
-        default: Date.now
-      }
-    }],
-    gameScores: [{
-      game: String,
-      score: Number,
-      playedAt: {
-        type: Date,
-        default: Date.now
-      }
-    }]
-  },
-  notifications: [{
-    id: {
+const UserSchema = new mongoose.Schema(
+  {
+    name: {
       type: String,
-      default: () => new mongoose.Types.ObjectId().toString()
+      required: true,
+      min: 2,
+      max: 100,
     },
-    type: {
+    email: {
       type: String,
-      enum: ['reward', 'transaction', 'alert', 'system'],
-      default: 'system'
+      required: true,
+      max: 50,
+      unique: true,
     },
-    title: String,
-    message: String,
-    isRead: {
+    password: {
+      type: String,
+      required: true,
+      min: 8,
+    },
+    phone: {
+      type: String,
+      max: 15,
+      default: "",
+    },
+    address: {
+      type: String,
+      default: "",
+    },
+    bankBalance: {
+      type: Number,
+      default: 1000,
+    },
+    panNumber: String,
+    occupation: String,
+    dateOfBirth: Date,
+    isVerified: {
       type: Boolean,
-      default: false
+      default: false,
     },
-    icon: {
+    isAdmin: {
+      type: Boolean,
+      default: false,
+    },
+    role: {
       type: String,
-      default: 'notification'
+      enum: ["user", "admin", "support"],
+      default: "user",
     },
-    link: String,
-    createdAt: {
-      type: Date,
-      default: Date.now
-    }
-  }],
-  bankBalance: {
-    type: Number,
-    default: 150000,
+    status: {
+      type: String,
+      enum: ["active", "inactive", "blocked"],
+      default: "active",
+    },
+    // Fields for rewards system
+    rewards: {
+      points: {
+        type: Number,
+        default: 0,
+      },
+      streak: {
+        type: Number,
+        default: 0,
+      },
+      lastLogin: {
+        type: Date,
+        default: null,
+      },
+      totalEarned: {
+        type: Number,
+        default: 0,
+      },
+    },
+    scratchCards: [
+      {
+        value: Number,
+        revealed: {
+          type: Boolean,
+          default: false,
+        },
+        expiryDate: Date,
+      },
+    ],
   },
-  isAdmin: {
-    type: Boolean,
-    default: false
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now,
-  },
-});
+  { timestamps: true }
+);
 
 // Hash password before saving
-UserSchema.pre('save', async function(next) {
+UserSchema.pre("save", async function (next) {
   // Only hash the password if it's modified (or new)
-  if (!this.isModified('password')) {
+  if (!this.isModified("password")) {
     return next();
   }
 
@@ -143,8 +104,9 @@ UserSchema.pre('save', async function(next) {
 });
 
 // Match password method
-UserSchema.methods.matchPassword = async function(enteredPassword) {
+UserSchema.methods.matchPassword = async function (enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);
 };
 
-export default mongoose.model('User', UserSchema);
+const Users = mongoose.model("Users", UserSchema);
+export default Users;
