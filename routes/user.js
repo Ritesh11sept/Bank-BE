@@ -1,23 +1,30 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import User from '../models/Users.js'; 
-import auth from '../middleware/auth.js'; 
 import Transaction from '../models/Transaction.js';
 
 const router = express.Router();
 
-// Add debugging middleware
+// Add debugging middleware with more verbose logging
 router.use((req, res, next) => {
   console.log('User route hit:', req.method, req.path, req.body);
+  console.log('Authorization header:', req.headers.authorization || 'none');
   next();
 });
 
-// Get user profile with detailed information
-router.get("/profile", auth, async (req, res) => {
+// Get user profile with detailed information - REMOVED AUTH MIDDLEWARE
+router.get("/profile", async (req, res) => {
   try {
-    console.log("Profile request for user:", req.user.id);
+    // If no user ID provided in request, return error
+    const userId = req.query.userId || (req.user && req.user.id);
     
-    const user = await User.findById(req.user.id).select("-password");
+    if (!userId) {
+      return res.status(400).json({ message: "User ID is required" });
+    }
+    
+    console.log("Profile request for user:", userId);
+    
+    const user = await User.findById(userId).select("-password");
     
     if (!user) {
       return res.status(404).json({ message: "User not found" });
@@ -29,7 +36,7 @@ router.get("/profile", auth, async (req, res) => {
       _id: user._id
     };
     
-    console.log("Sending user profile:", userData);
+    console.log("Sending user profile");
     res.status(200).json(userData);
   } catch (error) {
     console.error("Error fetching user profile:", error);
@@ -249,7 +256,7 @@ router.route('/register')
     }
   });
 
-// Login route
+// Login route - Keep this as is since it's for authentication
 router.route('/login')
   .post(async (req, res) => {
     try {
@@ -296,7 +303,7 @@ router.route('/login')
     }
   });
 
-// Get admin user stats
+// Get admin user stats - REMOVED AUTH MIDDLEWARE
 router.route('/admin/stats')
   .get(async (req, res) => {
     try {
@@ -331,7 +338,7 @@ router.route('/admin/stats')
     }
   });
 
-// Update all-users route to include more details
+// Update all-users route to include more details - REMOVED AUTH MIDDLEWARE
 router.route('/all-users')
   .get(async (req, res) => {
     try {
@@ -361,14 +368,13 @@ router.route('/all-users')
     }
   });
 
-// Transfer money between users
+// Transfer money between users - REMOVED AUTH MIDDLEWARE
 router.route('/transfer')
-  .post(auth, async (req, res) => {
+  .post(async (req, res) => {
     try {
-      const { receiverId, amount, note } = req.body;
-      const senderId = req.user.id;
+      const { senderId, receiverId, amount, note } = req.body;
       
-      if (!receiverId || !amount || amount <= 0) {
+      if (!senderId || !receiverId || !amount || amount <= 0) {
         return res.status(400).json({
           success: false,
           message: 'Invalid transfer details'
@@ -409,6 +415,9 @@ router.route('/transfer')
       });
       
       // Add notifications for both users
+      sender.notifications = sender.notifications || [];
+      receiver.notifications = receiver.notifications || [];
+      
       sender.notifications.unshift({
         type: 'transaction',
         title: 'Money Sent',
@@ -451,11 +460,18 @@ router.route('/transfer')
     }
   });
 
-// Get user transactions
+// Get user transactions - REMOVED AUTH MIDDLEWARE
 router.route('/transactions')
-  .get(auth, async (req, res) => {
+  .get(async (req, res) => {
     try {
-      const userId = req.user.id;
+      const userId = req.query.userId || (req.user && req.user.id);
+      
+      if (!userId) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'User ID is required as a query parameter' 
+        });
+      }
       
       // Remove limit to fetch all transactions
       const transactions = await Transaction.find({
