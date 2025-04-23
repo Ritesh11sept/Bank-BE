@@ -15,12 +15,28 @@ import Transaction from "./models/Transaction.js";
 /* CONFIGURATIONS */
 dotenv.config();
 const app = express();
-app.use(express.json());
+app.use(express.json({limit: '50mb'}));  // Increase payload limit for base64 images
 app.use(helmet());
 app.use(helmet.crossOriginResourcePolicy({ policy: "cross-origin" }));
 app.use(morgan("common"));
-app.use(bodyParser.json());
+app.use(bodyParser.json({limit: '50mb'}));  // Increase payload limit for base64 images
 app.use(bodyParser.urlencoded({ extended: false }));
+
+// Improved CORS handling
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*'); // Allow all origins
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  
+  // Handle preflight OPTIONS request
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+  
+  next();
+});
+
+// Keep the existing CORS middleware for additional configuration
 app.use(cors({
   origin: ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:3000'],
   credentials: true,
